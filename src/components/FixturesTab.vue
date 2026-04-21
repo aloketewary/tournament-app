@@ -6,73 +6,66 @@ import { updateMatch, addMatch } from '../services/sheetService'
 const props = defineProps<{ data: SheetData, game: string }>()
 const emit = defineEmits<{ (e: 'refresh'): void }>()
 
-interface Slot {
-  matchId: string | null; round: number; pos: number
-  team1: string | null; team2: string | null; winner: string | null
-  date: string; remarks: string; fromSheet: boolean
-}
-
 const totalRounds = computed(() => {
   const n = props.data.teams.length
   return n < 2 ? 0 : Math.ceil(Math.log2(n))
 })
 const size = computed(() => Math.pow(2, totalRounds.value))
 
-function findMatch(t1: string, t2: string): MatchData | undefined {
-  return props.data.matches.find(m =>
-    (m.team1Id === t1 && m.team2Id === t2) || (m.team1Id === t2 && m.team2Id === t1))
-}
+// Determine which round a match belongs to based on team history
+const matchesByRound = computed(() => {
+  const rounds: MatchData[][] = Array.from({ length: totalRounds.value }, () => [])
+  if (!totalRounds.value) return rounds
 
-const bracket = computed(() => {
-  const rounds: Slot[][] = []
-  const n = props.data.teams.length
-  if (n < 2) return rounds
+  // Track which round each team last won in
+  const teamRound = new Map<string, number>()
 
-  const r1: Slot[] = []
-  const r1Matches = props.data.matches.filter(m => {
-    const num = parseInt(m.matchId.replace(/\D/g, ''))
-    return num <= size.value / 2
+  // Sort matches by ID number
+  const sorted = [...props.data.matches].sort((a, b) => {
+    const na = parseInt(a.matchId.replace(/\D/g, ''))
+    const nb = parseInt(b.matchId.replace(/\D/g, ''))
+    return na - nb
   })
-  for (let i = 0; i < size.value / 2; i++) {
-    const sm = r1Matches[i]
-    r1.push(sm ? {
-      matchId: sm.matchId, round: 1, pos: i,
-      team1: sm.team1Id, team2: sm.team2Id, winner: sm.winner || null,
-      date: sm.scheduledDate, remarks: sm.remarks, fromSheet: true,
-    } : {
-      matchId: null, round: 1, pos: i,
-      team1: null, team2: null, winner: null,
-      date: '', remarks: '', fromSheet: false,
-    })
-  }
-  rounds.push(r1)
 
-  for (let r = 2; r <= totalRounds.value; r++) {
-    const prev = rounds[r - 2]
-    const cur: Slot[] = []
-    for (let i = 0; i < prev.length; i += 2) {
-      const w1 = prev[i]?.winner || null
-      const w2 = prev[i + 1]?.winner || null
-      let sm: MatchData | undefined
-      if (w1 && w2) sm = findMatch(w1, w2)
-      cur.push(sm ? {
-        matchId: sm.matchId, round: r, pos: cur.length,
-        team1: sm.team1Id, team2: sm.team2Id, winner: sm.winner || null,
-        date: sm.scheduledDate, remarks: sm.remarks, fromSheet: true,
-      } : {
-        matchId: null, round: r, pos: cur.length,
-        team1: w1, team2: w2, winner: null,
-        date: '', remarks: '', fromSheet: false,
-      })
+  for (const m of sorted) {
+    // Round = max round either team has won in + 1, or 0 if neither has won before
+    const r1 = teamRound.get(m.team1Id) ?? -1
+    const r2 = teamRound.get(m.team2Id) ?? -1
+    const round = Math.max(r1, r2) + 1
+    const clampedRound = Math.min(round, totalRounds.value - 1)
+
+    rounds[clampedRound].push(m)
+
+    // If there's a winner, record their round
+    if (m.winner) {
+      teamRound.set(m.winner, clampedRound)
     }
-    rounds.push(cur)
   }
+
   return rounds
 })
 
+// Winners not yet placed in a later round
+const availableWinners = computed(() => {
+  const result: string[] = []
+  for (let r = 0; r < matchesByRound.value.length - 1; r++) {
+    for (const m of matchesByRound.value[r]) {
+      if (!m.winner) continue
+      let placed = false
+      for (let nr = r + 1; nr < matchesByRound.value.length; nr++) {
+        if (matchesByRound.value[nr].some(nm => nm.team1Id === m.winner || nm.team2Id === m.winner)) {
+          placed = true; break
+        }
+      }
+      if (!placed) result.push(m.winner)
+    }
+  }
+  return [...new Set(result)]
+})
+
 const champion = computed(() => {
-  if (!bracket.value.length) return null
-  return bracket.value[bracket.value.length - 1]?.[0]?.winner || null
+  const last = matchesByRound.value[matchesByRound.value.length - 1]
+  return last?.[0]?.winner || null
 })
 
 function name(id: string | null) {
@@ -92,83 +85,153 @@ function roundLabel(r: number) {
   if (r === t - 2) return 'Quarter-Final'
   return `Round ${r}`
 }
-function state(s: Slot): 'done' | 'ready' | 'wait' | 'empty' {
-  if (s.winner) return 'done'
-  if (s.team1 && s.team2) return 'ready'
-  if (s.team1 || s.team2) return 'wait'
-  return 'empty'
+function slotsForRound(r: number) {
+  return Math.floor(size.value / Math.pow(2, r))
 }
 
-const ed = ref<Slot | null>(null)
+// --- Edit match modal ---
+const ed = ref<MatchData | null>(null)
 const edWinner = ref('')
 const edDate = ref('')
 const edRemarks = ref('')
 const saving = ref(false)
 const toast = ref<{ ok: boolean, msg: string } | null>(null)
 
-function open(s: Slot) {
-  const st = state(s)
-  if (st === 'empty' || st === 'wait') return
-  ed.value = s; edWinner.value = s.winner || ''; edDate.value = s.date; edRemarks.value = s.remarks
+function openMatch(m: MatchData) {
+  ed.value = m; edWinner.value = m.winner; edDate.value = m.scheduledDate; edRemarks.value = m.remarks
 }
-
-async function save() {
+async function saveMatch() {
   if (!ed.value) return
   saving.value = true; toast.value = null
   try {
-    if (ed.value.fromSheet && ed.value.matchId) {
-      const r = await updateMatch(props.game, ed.value.matchId, { winner: edWinner.value, scheduledDate: edDate.value, remarks: edRemarks.value })
-      toast.value = r.success ? { ok: true, msg: 'Updated!' } : { ok: false, msg: 'Failed' }
-    } else {
-      const r = await addMatch(props.game, ed.value.team1!, ed.value.team2!, edDate.value, edRemarks.value)
-      if (r.success && edWinner.value) await updateMatch(props.game, r.matchId!, { winner: edWinner.value })
-      toast.value = r.success ? { ok: true, msg: `${r.matchId} saved!` } : { ok: false, msg: r.error || 'Failed' }
-    }
+    const r = await updateMatch(props.game, ed.value.matchId, {
+      winner: edWinner.value, scheduledDate: edDate.value, remarks: edRemarks.value,
+    })
+    toast.value = r.success ? { ok: true, msg: 'Updated!' } : { ok: false, msg: 'Failed' }
     setTimeout(() => { ed.value = null; toast.value = null; emit('refresh') }, 600)
   } catch (e: any) { toast.value = { ok: false, msg: e.message } }
   saving.value = false
+}
+
+// --- Pair winners for next round ---
+const selectedWinners = ref<string[]>([])
+const pairSaving = ref(false)
+
+function toggleWinner(id: string) {
+  const idx = selectedWinners.value.indexOf(id)
+  if (idx >= 0) {
+    selectedWinners.value.splice(idx, 1)
+  } else {
+    if (selectedWinners.value.length < 2) {
+      selectedWinners.value.push(id)
+    }
+  }
+}
+
+async function createNextRoundMatch() {
+  if (selectedWinners.value.length !== 2) return
+  pairSaving.value = true; toast.value = null
+  try {
+    const r = await addMatch(props.game, selectedWinners.value[0], selectedWinners.value[1], '', '')
+    if (r.success) {
+      toast.value = { ok: true, msg: `${r.matchId} created!` }
+      selectedWinners.value = []
+      setTimeout(() => { toast.value = null; emit('refresh') }, 600)
+    } else {
+      toast.value = { ok: false, msg: r.error || 'Failed' }
+    }
+  } catch (e: any) { toast.value = { ok: false, msg: e.message } }
+  pairSaving.value = false
 }
 </script>
 
 <template>
   <div class="fix">
-    <div v-if="!data.teams.length" class="empty">
-      <p>📋 No teams registered yet</p>
-    </div>
+    <div v-if="!data.teams.length" class="empty"><p>📋 No teams registered yet</p></div>
 
     <!-- Champion -->
     <div v-if="champion" class="champ">
-      <span class="champ-icon">🏆</span>
-      <div><div class="champ-lbl">Champion</div><div class="champ-name">{{ champion }} — {{ name(champion) }}</div></div>
+      <span class="ci">🏆</span>
+      <div><div class="cl">Champion</div><div class="cn">{{ champion }} — {{ name(champion) }}</div></div>
     </div>
 
+    <!-- Pair Winners -->
+    <div v-if="availableWinners.length >= 2" class="pair-section">
+      <div class="pair-head">
+        <span class="pair-dot"></span>
+        <h3>Promote Winners — select 2 to create next match</h3>
+      </div>
+      <div class="pair-list">
+        <button
+          v-for="w in availableWinners" :key="w"
+          :class="['wchip', { selected: selectedWinners.includes(w) }]"
+          @click="toggleWinner(w)"
+        >
+          <span class="wc-id">{{ w }}</span>
+          <span class="wc-name">{{ name(w) }}</span>
+        </button>
+      </div>
+      <button
+        v-if="selectedWinners.length === 2"
+        class="pair-btn"
+        @click="createNextRoundMatch"
+        :disabled="pairSaving"
+      >
+        {{ pairSaving ? 'Creating...' : `Create: ${selectedWinners[0]} vs ${selectedWinners[1]} →` }}
+      </button>
+    </div>
+
+    <!-- Single winner waiting -->
+    <div v-else-if="availableWinners.length === 1" class="pair-section solo">
+      <div class="pair-head">
+        <span class="pair-dot"></span>
+        <h3>Waiting for opponent</h3>
+      </div>
+      <div class="pair-list">
+        <div class="wchip selected">
+          <span class="wc-id">{{ availableWinners[0] }}</span>
+          <span class="wc-name">{{ name(availableWinners[0]) }}</span>
+        </div>
+      </div>
+    </div>
+
+    <div v-if="toast && !ed" :class="['toast', toast.ok ? 'ok' : 'err']">{{ toast.msg }}</div>
+
     <!-- Bracket -->
-    <div v-if="bracket.length" class="bwrap">
+    <div v-if="totalRounds" class="bwrap">
       <div class="bscroll">
         <div class="bracket">
-          <div v-for="(round, ri) in bracket" :key="ri" class="round">
-            <div class="rlabel">{{ roundLabel(ri + 1) }}</div>
+          <div v-for="r in totalRounds" :key="r" class="round">
+            <div class="rlabel">{{ roundLabel(r) }}</div>
             <div class="rslots" :style="{
-              paddingTop: ri > 0 ? (26 * Math.pow(2, ri) - 26) + 'px' : '0',
-              gap: ri > 0 ? (26 * Math.pow(2, ri)) + 'px' : '6px'
+              paddingTop: r > 1 ? (28 * Math.pow(2, r - 1) - 28) + 'px' : '0',
+              gap: r > 1 ? (28 * Math.pow(2, r - 1)) + 'px' : '6px'
             }">
-              <div v-for="s in round" :key="s.pos" :class="['s', state(s)]" @click="open(s)">
-                <div :class="['st', { w: s.winner === s.team1, l: s.winner && s.winner !== s.team1 && !!s.team1 }]">
-                  <span v-if="s.team1" class="sid">{{ s.team1 }}</span>
-                  <span v-if="s.team1" class="sn">{{ short(s.team1) }}</span>
-                  <span v-else class="se">—</span>
+              <!-- Matches from sheet -->
+              <div v-for="m in (matchesByRound[r - 1] || [])" :key="m.matchId"
+                :class="['s', m.winner ? 'done' : 'ready']" @click="openMatch(m)">
+                <div :class="['st', { w: m.winner === m.team1Id, l: m.winner && m.winner !== m.team1Id }]">
+                  <span class="sid">{{ m.team1Id }}</span>
+                  <span class="sn">{{ short(m.team1Id) }}</span>
                 </div>
                 <div class="sd"></div>
-                <div :class="['st', { w: s.winner === s.team2, l: s.winner && s.winner !== s.team2 && !!s.team2 }]">
-                  <span v-if="s.team2" class="sid">{{ s.team2 }}</span>
-                  <span v-if="s.team2" class="sn">{{ short(s.team2) }}</span>
-                  <span v-else class="se">—</span>
+                <div :class="['st', { w: m.winner === m.team2Id, l: m.winner && m.winner !== m.team2Id }]">
+                  <span class="sid">{{ m.team2Id }}</span>
+                  <span class="sn">{{ short(m.team2Id) }}</span>
                 </div>
                 <div class="sf">
-                  <span v-if="s.matchId" class="sf-id">{{ s.matchId }}</span>
-                  <span v-if="s.date" class="sf-d">{{ s.date }}</span>
-                  <span v-if="s.remarks && s.winner" class="sf-sc">{{ s.remarks }}</span>
+                  <span class="sf-id">{{ m.matchId }}</span>
+                  <span v-if="m.scheduledDate" class="sf-d">{{ m.scheduledDate }}</span>
+                  <span v-if="m.remarks && m.winner" class="sf-sc">{{ m.remarks }}</span>
                 </div>
+              </div>
+
+              <!-- Empty slots -->
+              <div v-for="i in Math.max(0, slotsForRound(r) - (matchesByRound[r - 1]?.length || 0))"
+                :key="'e' + i" class="s empty-slot">
+                <div class="st"><span class="se">—</span></div>
+                <div class="sd"></div>
+                <div class="st"><span class="se">—</span></div>
               </div>
             </div>
           </div>
@@ -176,26 +239,24 @@ async function save() {
       </div>
     </div>
 
-
-
-    <!-- Modal -->
+    <!-- Edit Modal -->
     <Teleport to="body">
       <div v-if="ed" class="overlay" @click.self="ed = null">
         <div class="modal">
-          <h3>{{ ed.fromSheet ? 'Edit Match' : 'Set Result' }}</h3>
+          <h3>{{ ed.winner ? 'Edit' : 'Set Result' }} — {{ ed.matchId }}</h3>
           <div class="mu">
-            <div class="mu-t"><span class="mu-id">{{ ed.team1 }}</span> {{ name(ed.team1) }}</div>
+            <div class="mu-t"><span class="mu-id">{{ ed.team1Id }}</span> {{ name(ed.team1Id) }}</div>
             <div class="mu-vs">VS</div>
-            <div class="mu-t"><span class="mu-id">{{ ed.team2 }}</span> {{ name(ed.team2) }}</div>
+            <div class="mu-t"><span class="mu-id">{{ ed.team2Id }}</span> {{ name(ed.team2Id) }}</div>
           </div>
           <div v-if="toast" :class="['toast', toast.ok ? 'ok' : 'err']">{{ toast.msg }}</div>
           <label>Winner
             <div class="wbtns">
-              <button :class="['wb', { sel: edWinner === ed.team1 }]" @click="edWinner = ed.team1!">
-                {{ ed.team1 }} — {{ short(ed.team1) }}
+              <button :class="['wb', { sel: edWinner === ed.team1Id }]" @click="edWinner = ed.team1Id">
+                {{ ed.team1Id }} — {{ short(ed.team1Id) }}
               </button>
-              <button :class="['wb', { sel: edWinner === ed.team2 }]" @click="edWinner = ed.team2!">
-                {{ ed.team2 }} — {{ short(ed.team2) }}
+              <button :class="['wb', { sel: edWinner === ed.team2Id }]" @click="edWinner = ed.team2Id">
+                {{ ed.team2Id }} — {{ short(ed.team2Id) }}
               </button>
             </div>
           </label>
@@ -203,7 +264,7 @@ async function save() {
           <label>Date <input v-model="edDate" placeholder="e.g. 23-Apr" /></label>
           <div class="btns">
             <button class="bc" @click="ed = null">Cancel</button>
-            <button class="bs" @click="save" :disabled="saving || !edWinner">{{ saving ? 'Saving...' : 'Save' }}</button>
+            <button class="bs" @click="saveMatch" :disabled="saving || !edWinner">{{ saving ? 'Saving...' : 'Save' }}</button>
           </div>
         </div>
       </div>
@@ -212,17 +273,51 @@ async function save() {
 </template>
 
 <style scoped>
-.fix { display: flex; flex-direction: column; gap: 24px; }
-.empty { text-align: center; padding: 60px; color: var(--text); font-size: 14px; background: var(--card); border: 1px dashed var(--border); border-radius: var(--radius); }
+.fix { display: flex; flex-direction: column; gap: 20px; }
+.empty { text-align: center; padding: 60px; color: var(--text); background: var(--card); border: 1px dashed var(--border); border-radius: var(--radius); }
 
 .champ {
   display: flex; align-items: center; gap: 14px; padding: 14px 18px; border-radius: var(--radius);
   background: linear-gradient(135deg, rgba(234,179,8,0.1), rgba(234,179,8,0.03));
   border: 1px solid rgba(234,179,8,0.2);
 }
-.champ-icon { font-size: 28px; }
-.champ-lbl { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: #ca8a04; }
-.champ-name { font-size: 15px; font-weight: 700; color: var(--text-h); }
+.ci { font-size: 28px; }
+.cl { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: #ca8a04; }
+.cn { font-size: 15px; font-weight: 700; color: var(--text-h); }
+
+/* Pair Winners */
+.pair-section {
+  padding: 16px; border-radius: var(--radius);
+  background: var(--card); border: 1px solid var(--green-border);
+}
+.pair-section.solo { border-color: var(--border); }
+.pair-head { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+.pair-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); }
+.pair-head h3 { font-size: 12px; margin: 0; color: var(--text); font-weight: 600; }
+.pair-list { display: flex; flex-wrap: wrap; gap: 6px; }
+.wchip {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 14px; border-radius: var(--radius-sm);
+  background: var(--bg); border: 2px solid var(--border);
+  font-size: 12px; transition: all 0.15s;
+}
+.wchip:hover { border-color: var(--green-border); }
+.wchip.selected { border-color: var(--green); background: var(--green-bg); }
+.wc-id { font-weight: 800; color: var(--green); font-size: 11px; }
+.wc-name { font-weight: 600; color: var(--text-h); }
+.wchip.selected .wc-id, .wchip.selected .wc-name { color: var(--green); }
+
+.pair-btn {
+  margin-top: 12px; width: 100%; padding: 11px; border-radius: var(--radius-sm); border: none;
+  background: var(--green); color: #fff; font-size: 13px; font-weight: 700;
+  transition: all 0.2s; box-shadow: 0 2px 10px rgba(16,185,129,0.2);
+}
+.pair-btn:hover { box-shadow: 0 4px 16px rgba(16,185,129,0.3); }
+.pair-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.toast { padding: 8px 12px; border-radius: 8px; font-size: 12px; font-weight: 600; }
+.toast.ok { background: var(--green-bg); color: var(--green); }
+.toast.err { background: var(--red-bg); color: var(--red); }
 
 /* Bracket */
 .bwrap { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; }
@@ -244,8 +339,7 @@ async function save() {
 .s.ready:hover { box-shadow: var(--shadow-md); border-color: var(--accent); }
 .s.done { border-color: var(--green-border); background: var(--green-bg); cursor: pointer; }
 .s.done:hover { box-shadow: var(--shadow-md); }
-.s.wait { opacity: 0.35; border-style: dashed; }
-.s.empty { opacity: 0.2; border-style: dashed; }
+.s.empty-slot { opacity: 0.2; border-style: dashed; }
 
 .st { display: flex; align-items: center; gap: 5px; padding: 3px 0; font-size: 11.5px; min-height: 22px; }
 .st.w .sn { color: var(--green); font-weight: 700; }
@@ -260,20 +354,6 @@ async function save() {
 .sf-id { font-size: 9px; font-weight: 700; color: var(--text); }
 .sf-d { font-size: 9px; color: var(--accent); }
 .sf-sc { font-size: 9px; font-weight: 700; color: var(--green); background: var(--green-bg); padding: 1px 5px; border-radius: 4px; }
-
-/* Results */
-.results { border-top: 1px solid var(--border); padding-top: 16px; }
-.results h3 { font-size: 12px; color: var(--text); margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px; }
-.rrow {
-  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
-  padding: 7px 12px; border-radius: 8px; font-size: 12px;
-  background: var(--card); border: 1px solid var(--border); margin-bottom: 4px;
-}
-.rid { font-size: 10px; font-weight: 700; color: var(--text); min-width: 26px; }
-.rw { color: var(--green); font-weight: 700; }
-.rvs { font-size: 10px; color: var(--text); }
-.rwn { color: var(--green); font-weight: 600; }
-.rsc { color: var(--text); }
 
 /* Modal */
 .overlay {
@@ -294,17 +374,12 @@ async function save() {
 .mu-id { font-size: 10px; font-weight: 800; color: var(--accent); background: var(--accent-bg); padding: 2px 8px; border-radius: 6px; }
 .mu-vs { font-size: 11px; font-weight: 800; color: #fff; background: var(--accent); padding: 2px 12px; border-radius: 20px; }
 
-.toast { padding: 8px 12px; border-radius: 8px; font-size: 12px; font-weight: 600; }
-.toast.ok { background: var(--green-bg); color: var(--green); }
-.toast.err { background: var(--red-bg); color: var(--red); }
-
 .modal label { display: flex; flex-direction: column; gap: 5px; font-size: 12px; font-weight: 600; color: var(--text); }
 .modal input {
   padding: 9px 12px; border-radius: 8px; border: 1px solid var(--border);
   background: var(--bg); color: var(--text-h); font-size: 13px; font-family: inherit;
 }
 .modal input:focus { outline: none; border-color: var(--accent); }
-
 .wbtns { display: flex; gap: 8px; }
 .wb {
   flex: 1; padding: 11px 8px; border-radius: var(--radius-sm); border: 2px solid var(--border);
@@ -313,7 +388,6 @@ async function save() {
 }
 .wb:hover { border-color: var(--accent-border); }
 .wb.sel { border-color: var(--green); background: var(--green-bg); color: var(--green); box-shadow: 0 0 0 3px rgba(16,185,129,0.08); }
-
 .btns { display: flex; gap: 8px; margin-top: 4px; }
 .bc { flex: 1; padding: 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--card); color: var(--text); font-weight: 600; font-size: 13px; }
 .bs { flex: 2; padding: 10px; border-radius: 8px; border: none; background: var(--accent); color: #fff; font-weight: 700; font-size: 13px; }

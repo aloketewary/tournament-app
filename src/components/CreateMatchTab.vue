@@ -18,7 +18,10 @@ const toast = ref<{ ok: boolean, msg: string } | null>(null)
 const pool = computed(() => props.data.teams.filter(t => t !== slot1.value && t !== slot2.value))
 
 function label(t: Team) { return t.players.map(p => p.name).join(' & ') }
-function short(t: Team) { return t.players.map(p => p.name.split(' ')[0]).join(' & ') }
+
+function matchCount(teamId: string): number {
+  return props.data.matches.filter(m => m.team1Id === teamId || m.team2Id === teamId).length
+}
 
 function onDragStart(e: DragEvent, t: Team) { e.dataTransfer!.setData('id', t.id) }
 function onDrop(e: DragEvent, s: 1 | 2) {
@@ -65,7 +68,7 @@ async function confirm() {
         <template v-if="slot1">
           <div class="drop-info">
             <span class="drop-id">{{ slot1.id }}</span>
-            <span class="drop-name">{{ short(slot1) }}</span>
+            <span class="drop-name">{{ label(slot1) }}</span>
           </div>
           <button class="drop-x" @click="slot1 = null">×</button>
         </template>
@@ -79,7 +82,7 @@ async function confirm() {
         <template v-if="slot2">
           <div class="drop-info">
             <span class="drop-id">{{ slot2.id }}</span>
-            <span class="drop-name">{{ short(slot2) }}</span>
+            <span class="drop-name">{{ label(slot2) }}</span>
           </div>
           <button class="drop-x" @click="slot2 = null">×</button>
         </template>
@@ -96,7 +99,8 @@ async function confirm() {
       <div v-for="t in pool" :key="t.id" class="pill" draggable="true"
         @dragstart="onDragStart($event, t)" @click="click(t)">
         <span class="pill-id">{{ t.id }}</span>
-        <span class="pill-name">{{ short(t) }}</span>
+        <span class="pill-name">{{ label(t) }}</span>
+        <span v-if="matchCount(t.id)" class="pill-matches">{{ matchCount(t.id) }}m</span>
       </div>
     </div>
 
@@ -174,6 +178,10 @@ async function confirm() {
 .pill:active { cursor: grabbing; }
 .pill-id { font-size: 10px; font-weight: 800; color: var(--accent); }
 .pill-name { font-weight: 600; color: var(--text-h); }
+.pill-matches {
+  font-size: 9px; font-weight: 700; color: var(--accent);
+  background: var(--accent-bg); padding: 1px 6px; border-radius: 6px;
+}
 
 .overlay {
   position: fixed; inset: 0; background: rgba(0,0,0,0.35); backdrop-filter: blur(10px);
