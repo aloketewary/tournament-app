@@ -6,6 +6,8 @@ import PlayersTab from './components/PlayersTab.vue'
 import CreateMatchTab from './components/CreateMatchTab.vue'
 import FixturesTab from './components/FixturesTab.vue'
 import ResultsTab from './components/ResultsTab.vue'
+import UserPrompt from './components/UserPrompt.vue'
+import { getUser, hasUser } from './services/sheetService'
 
 const sheetNames = ['TT_Doubles', 'TT_Singles', 'Carrom_Doubles', 'Carrom_Singles', 'Chess', 'Foosball_Doubles', 'Foosball_Singles', 'Dart']
 const validViews = ['fixtures', 'results', 'create', 'players'] as const
@@ -73,8 +75,24 @@ function selectGame(name: string) {
   })
 }
 
+const showUserPrompt = ref(false)
+const currentUser = ref(getUser())
+
 function selectView(id: View) {
+  if ((id === 'create') && !hasUser()) {
+    showUserPrompt.value = true
+    return
+  }
   activeView.value = id
+}
+
+function onUserConfirmed() {
+  showUserPrompt.value = false
+  currentUser.value = getUser()
+}
+
+function changeUser() {
+  showUserPrompt.value = true
 }
 
 const views = [
@@ -103,12 +121,17 @@ onMounted(loadData)
             <p class="brand-sub">Office Sports Championship</p>
           </div>
         </div>
-        <button class="refresh" @click="loadData" :disabled="loading" title="Refresh data">
-          <svg :class="{ spin: loading }" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M21 2v6h-6"/><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/>
-            <path d="M3 22v-6h6"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/>
-          </svg>
-        </button>
+        <div class="header-right">
+          <button v-if="currentUser" class="user-chip" @click="changeUser" title="Change user">
+            👤 {{ currentUser }}
+          </button>
+          <button class="refresh" @click="loadData" :disabled="loading" title="Refresh data">
+            <svg :class="{ spin: loading }" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 2v6h-6"/><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/>
+              <path d="M3 22v-6h6"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/>
+            </svg>
+          </button>
+        </div>
       </div>
     </header>
 
@@ -159,6 +182,7 @@ onMounted(loadData)
       </template>
     </main>
     <router-view v-show="false" />
+    <UserPrompt v-if="showUserPrompt" @confirmed="onUserConfirmed" />
   </div>
 </template>
 
@@ -192,6 +216,13 @@ onMounted(loadData)
 .refresh:hover { color: var(--accent); border-color: var(--accent-border); background: var(--accent-bg); }
 .refresh:disabled { opacity: 0.3; pointer-events: none; }
 .spin { animation: spin 0.7s linear infinite; }
+.header-right { display: flex; align-items: center; gap: 8px; }
+.user-chip {
+  padding: 6px 12px; border-radius: 100px; border: 1px solid var(--border);
+  background: var(--accent-bg); color: var(--accent); font-size: 12px; font-weight: 600;
+  transition: all 0.15s;
+}
+.user-chip:hover { border-color: var(--accent-border); box-shadow: var(--shadow); }
 
 /* Games */
 .games {

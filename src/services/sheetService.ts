@@ -207,7 +207,7 @@ export async function fetchSheet(sheetName: string): Promise<SheetData> {
 export async function addMatch(sheetName: string, team1Id: string, team2Id: string, scheduledDate: string, remarks: string): Promise<{ success: boolean, matchId?: string, error?: string }> {
   const res = await fetch(APPS_SCRIPT_URL, {
     method: 'POST',
-    body: JSON.stringify({ action: 'addMatch', sheetName, team1: team1Id, team2: team2Id, scheduledDate, remarks }),
+    body: JSON.stringify({ action: 'addMatch', sheetName, team1: team1Id, team2: team2Id, scheduledDate, remarks, updatedBy: getUser() }),
   })
   return res.json()
 }
@@ -215,7 +215,7 @@ export async function addMatch(sheetName: string, team1Id: string, team2Id: stri
 export async function updateMatch(sheetName: string, matchId: string, data: { scheduledDate?: string, winner?: string, remarks?: string }): Promise<{ success: boolean }> {
   const res = await fetch(APPS_SCRIPT_URL, {
     method: 'POST',
-    body: JSON.stringify({ action: 'updateMatch', sheetName, matchId, ...data }),
+    body: JSON.stringify({ action: 'updateMatch', sheetName, matchId, ...data, updatedBy: getUser() }),
   })
   return res.json()
 }
@@ -223,7 +223,20 @@ export async function updateMatch(sheetName: string, matchId: string, data: { sc
 export async function deleteMatch(sheetName: string, matchId: string): Promise<{ success: boolean }> {
   const res = await fetch(APPS_SCRIPT_URL, {
     method: 'POST',
-    body: JSON.stringify({ action: 'deleteMatch', sheetName, matchId }),
+    body: JSON.stringify({ action: 'deleteMatch', sheetName, matchId, updatedBy: getUser() }),
   })
   return res.json()
+}
+
+// User management
+export function getUser(): string {
+  return localStorage.getItem('tournament_user') || ''
+}
+
+export function setUser(name: string) {
+  localStorage.setItem('tournament_user', name.trim())
+}
+
+export function hasUser(): boolean {
+  return !!getUser()
 }
