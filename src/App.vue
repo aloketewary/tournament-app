@@ -77,6 +77,7 @@ function selectGame(name: string) {
 
 const showUserPrompt = ref(false)
 const currentUser = ref(getUser())
+const year = ref(2026)
 
 function selectView(id: View) {
   if ((id === 'create') && !hasUser()) {
@@ -122,8 +123,8 @@ onMounted(loadData)
         <div class="brand">
           <div class="brand-logo">🏆</div>
           <div>
-            <h1>Tournament Hub</h1>
-            <p class="brand-sub">Office Sports Championship</p>
+            <h1>Here Technologies Internal Tournament Hub {{ year }}</h1>
+            <p class="brand-sub">Here Technologies Indoor Sports Championship</p>
           </div>
         </div>
         <div class="header-right">
