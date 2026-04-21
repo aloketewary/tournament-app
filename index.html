@@ -8,6 +8,13 @@
   </head>
   <body>
     <div id="app"></div>
+    <script>
+      // GitHub Pages SPA deep link restore
+      (function() {
+        var p = new URLSearchParams(window.location.search).get('p');
+        if (p) window.history.replaceState(null, '', '/tournament-app' + p);
+      })();
+    </script>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { ref, onMounted, nextTick, computed } from 'vue'
+import { ref, onMounted, nextTick, computed, watch } from 'vue'
+import { useRouter, useRoute } from 'vue-router'
 import { fetchSheet, type SheetData } from './services/sheetService'
 import PlayersTab from './components/PlayersTab.vue'
 import CreateMatchTab from './components/CreateMatchTab.vue'
@@ -7,11 +8,31 @@ import FixturesTab from './components/FixturesTab.vue'
 import ResultsTab from './components/ResultsTab.vue'
 
 const sheetNames = ['TT_Doubles', 'TT_Singles', 'Carrom_Doubles', 'Carrom_Singles', 'Chess', 'Foosball_Doubles', 'Foosball_Singles', 'Dart']
+const validViews = ['fixtures', 'results', 'create', 'players'] as const
+type View = typeof validViews[number]
+
+const router = useRouter()
+const route = useRoute()
+
 const games = ref<Record<string, SheetData>>({})
-const activeGame = ref(sheetNames[0])
-const activeView = ref<'fixtures' | 'results' | 'create' | 'players'>('fixtures')
 const loading = ref(true)
 const error = ref('')
+
+const activeGame = computed({
+  get: () => {
+    const g = route.params.game as string
+    return sheetNames.includes(g) ? g : sheetNames[0]
+  },
+  set: (val: string) => router.push(`/${val}/${activeView.value}`)
+})
+
+const activeView = computed({
+  get: () => {
+    const v = route.params.view as View
+    return validViews.includes(v) ? v : 'fixtures'
+  },
+  set: (val: View) => router.push(`/${activeGame.value}/${val}`)
+})
 
 async function loadData() {
   loading.value = true
@@ -50,6 +71,10 @@ function selectGame(name: string) {
     const el = document.querySelector('.game-pill.active') as HTMLElement
     if (el) el.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' })
   })
+}
+
+function selectView(id: View) {
+  activeView.value = id
 }
 
 const views = [
@@ -107,7 +132,7 @@ onMounted(loadData)
         <button
           v-for="v in views" :key="v.id"
           :class="['tab', { active: activeView === v.id }]"
-          @click="activeView = v.id"
+          @click="selectView(v.id)"
         >
           {{ v.label }}
           <span v-if="v.id === 'fixtures' && matchCount" class="tab-badge">{{ matchCount }}</span>
@@ -133,6 +158,7 @@ onMounted(loadData)
         <ResultsTab v-if="activeView === 'results'" :data="games[activeGame]" :game="activeGame" :key="activeGame" @refresh="loadData" />
       </template>
     </main>
+    <router-view v-show="false" />
   </div>
 </template>
 
