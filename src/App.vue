@@ -7,7 +7,7 @@ import CreateMatchTab from './components/CreateMatchTab.vue'
 import FixturesTab from './components/FixturesTab.vue'
 import ResultsTab from './components/ResultsTab.vue'
 import UserPrompt from './components/UserPrompt.vue'
-import { getUser, hasUser } from './services/sheetService'
+import { getUser, hasUser, exportGameCSV } from './services/sheetService'
 
 const sheetNames = ['TT_Doubles', 'TT_Singles', 'Carrom_Doubles', 'Carrom_Singles', 'Chess', 'Foosball_Doubles', 'Foosball_Singles', 'Dart']
 const validViews = ['fixtures', 'results', 'create', 'players'] as const
@@ -91,6 +91,11 @@ function onUserConfirmed() {
   currentUser.value = getUser()
 }
 
+function exportCurrent() {
+  const data = games.value[activeGame.value]
+  if (data) exportGameCSV(data, activeGame.value)
+}
+
 function changeUser() {
   showUserPrompt.value = true
 }
@@ -125,7 +130,10 @@ onMounted(loadData)
           <button v-if="currentUser" class="user-chip" @click="changeUser" title="Change user">
             👤 {{ currentUser }}
           </button>
-          <button class="refresh" @click="loadData" :disabled="loading" title="Refresh data">
+          <button class="user-chip" @click="exportCurrent" title="Export CSV" :disabled="loading || !games[activeGame]">
+            📥 Download Excel
+          </button>
+          <button class="hdr-btn" @click="loadData" :disabled="loading" title="Refresh data">
             <svg :class="{ spin: loading }" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
               <path d="M21 2v6h-6"/><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/>
               <path d="M3 22v-6h6"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/>
@@ -208,13 +216,13 @@ onMounted(loadData)
 }
 .brand h1 { font-size: 18px; margin: 0; }
 .brand-sub { font-size: 11px; color: var(--text); margin: 0; font-weight: 500; }
-.refresh {
+.hdr-btn {
   width: 38px; height: 38px; border-radius: var(--radius-sm); border: 1px solid var(--border);
   background: var(--card); color: var(--text); display: flex; align-items: center; justify-content: center;
-  transition: all 0.2s;
+  transition: all 0.2s; font-size: 16px;
 }
-.refresh:hover { color: var(--accent); border-color: var(--accent-border); background: var(--accent-bg); }
-.refresh:disabled { opacity: 0.3; pointer-events: none; }
+.hdr-btn:hover { color: var(--accent); border-color: var(--accent-border); background: var(--accent-bg); }
+.hdr-btn:disabled { opacity: 0.3; pointer-events: none; }
 .spin { animation: spin 0.7s linear infinite; }
 .header-right { display: flex; align-items: center; gap: 8px; }
 .user-chip {

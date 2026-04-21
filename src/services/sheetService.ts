@@ -240,3 +240,53 @@ export function setUser(name: string) {
 export function hasUser(): boolean {
   return !!getUser()
 }
+
+// Export helpers
+function teamName(teams: Team[], id: string): string {
+  const t = teams.find(t => t.id === id)
+  return t ? t.players.map(p => p.name).join(' & ') : id
+}
+
+export function exportGameCSV(data: SheetData, gameName: string) {
+  const lines: string[] = []
+
+  // Players section
+  lines.push('Team ID,Players,Days Available,Remarks')
+  for (const t of data.teams) {
+    const players = t.players.map(p => p.name).join(' & ')
+    lines.push([t.id, players, t.days.join(', '), t.remarks].map(esc).join(','))
+  }
+  if (data.withdrawn.length) {
+    for (const p of data.withdrawn) {
+      lines.push(['', p.name, '', 'Withdrawn'].map(esc).join(','))
+    }
+  }
+
+  // Matches section
+  if (data.matches.length) {
+    lines.push('')
+    lines.push('Match ID,Team 1,Team 2,Scheduled Date,Winner,Remarks')
+    for (const m of data.matches) {
+      const t1 = teamName(data.teams, m.team1Id)
+      const t2 = teamName(data.teams, m.team2Id)
+      const winner = m.winner ? teamName(data.teams, m.winner) : ''
+      lines.push([m.matchId, t1, t2, m.scheduledDate, winner, m.remarks].map(esc).join(','))
+    }
+  }
+
+  const blob = new Blob([lines.join('\n')], { type: 'text/csv' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `${gameName.replace(/_/g, ' ')}.csv`
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
+function esc(val: string): string {
+  if (!val) return '""'
+  if (val.includes(',') || val.includes('"') || val.includes('\n')) {
+    return '"' + val.replace(/"/g, '""') + '"'
+  }
+  return val
+}
