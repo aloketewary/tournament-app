@@ -68,6 +68,44 @@ function doPost(e) {
         .setMimeType(ContentService.MimeType.JSON);
     }
 
+    if (data.action === 'addRule') {
+      var rulesSheet = getOrCreateRulesSheet(ss);
+      var lastRow = Math.max(rulesSheet.getLastRow(), 1);
+      rulesSheet.getRange(lastRow + 1, 1, 1, 3).setValues([
+        [data.game || '', data.rule || '', lastRow]
+      ]);
+      return ContentService.createTextOutput(JSON.stringify({ success: true }))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+
+    if (data.action === 'updateRule') {
+      var rulesSheet = getOrCreateRulesSheet(ss);
+      var values = rulesSheet.getDataRange().getValues();
+      for (var i = 1; i < values.length; i++) {
+        if (String(values[i][0]) === data.game && String(values[i][1]) === data.oldRule) {
+          rulesSheet.getRange(i + 1, 2).setValue(data.newRule);
+          return ContentService.createTextOutput(JSON.stringify({ success: true }))
+            .setMimeType(ContentService.MimeType.JSON);
+        }
+      }
+      return ContentService.createTextOutput(JSON.stringify({ success: false, error: 'Rule not found' }))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+
+    if (data.action === 'deleteRule') {
+      var rulesSheet = getOrCreateRulesSheet(ss);
+      var values = rulesSheet.getDataRange().getValues();
+      for (var i = 1; i < values.length; i++) {
+        if (String(values[i][0]) === data.game && String(values[i][1]) === data.rule) {
+          rulesSheet.deleteRow(i + 1);
+          return ContentService.createTextOutput(JSON.stringify({ success: true }))
+            .setMimeType(ContentService.MimeType.JSON);
+        }
+      }
+      return ContentService.createTextOutput(JSON.stringify({ success: false, error: 'Rule not found' }))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+
     return ContentService.createTextOutput(JSON.stringify({ success: false, error: 'Unknown action' }))
       .setMimeType(ContentService.MimeType.JSON);
 
@@ -102,6 +140,19 @@ function getOrCreateMatchSheet(ss, sheetName) {
     }
   }
 
+  return sheet;
+}
+
+function getOrCreateRulesSheet(ss) {
+  var sheet = ss.getSheetByName('Rules');
+  if (!sheet) {
+    sheet = ss.insertSheet('Rules');
+    sheet.getRange(1, 1, 1, 3).setValues([['Game', 'Rule', 'Order']]);
+    sheet.getRange(1, 1, 1, 3).setFontWeight('bold');
+    sheet.setColumnWidth(1, 150);
+    sheet.setColumnWidth(2, 500);
+    sheet.setColumnWidth(3, 60);
+  }
   return sheet;
 }
 

@@ -241,6 +241,46 @@ export function hasUser(): boolean {
   return !!getUser()
 }
 
+// Rules
+export interface Rule {
+  game: string
+  rule: string
+}
+
+export async function fetchRules(): Promise<Rule[]> {
+  const url = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&headers=0&sheet=Rules`
+  const res = await fetch(url)
+  const text = await res.text()
+  if (!text.trim()) return []
+  const rows = parseCSV(text)
+  if (rows.length < 2) return []
+  return rows.slice(1).filter(r => r[0] && r[1]).map(r => ({ game: r[0], rule: r[1] }))
+}
+
+export async function addRule(game: string, rule: string): Promise<{ success: boolean }> {
+  const res = await fetch(APPS_SCRIPT_URL, {
+    method: 'POST',
+    body: JSON.stringify({ action: 'addRule', game, rule }),
+  })
+  return res.json()
+}
+
+export async function updateRule(game: string, oldRule: string, newRule: string): Promise<{ success: boolean }> {
+  const res = await fetch(APPS_SCRIPT_URL, {
+    method: 'POST',
+    body: JSON.stringify({ action: 'updateRule', game, oldRule, newRule }),
+  })
+  return res.json()
+}
+
+export async function deleteRule(game: string, rule: string): Promise<{ success: boolean }> {
+  const res = await fetch(APPS_SCRIPT_URL, {
+    method: 'POST',
+    body: JSON.stringify({ action: 'deleteRule', game, rule }),
+  })
+  return res.json()
+}
+
 // Export helpers
 function teamName(teams: Team[], id: string): string {
   const t = teams.find(t => t.id === id)

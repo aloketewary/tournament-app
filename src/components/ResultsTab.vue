@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import type { SheetData, MatchData } from '../services/sheetService'
-import { updateMatch } from '../services/sheetService'
+import { updateMatch, deleteMatch } from '../services/sheetService'
 
 const props = defineProps<{ data: SheetData, game: string }>()
 const emit = defineEmits<{ (e: 'refresh'): void }>()
@@ -38,6 +38,18 @@ async function save() {
     })
     toast.value = r.success ? { ok: true, msg: 'Updated!' } : { ok: false, msg: 'Failed' }
     setTimeout(() => { ed.value = null; toast.value = null; emit('refresh') }, 600)
+  } catch (e: any) { toast.value = { ok: false, msg: e.message } }
+  saving.value = false
+}
+
+const confirmDelete = ref(false)
+async function removeMatch() {
+  if (!ed.value) return
+  saving.value = true; toast.value = null
+  try {
+    const r = await deleteMatch(props.game, ed.value.matchId)
+    toast.value = r.success ? { ok: true, msg: 'Deleted!' } : { ok: false, msg: 'Failed' }
+    setTimeout(() => { ed.value = null; toast.value = null; confirmDelete.value = false; emit('refresh') }, 600)
   } catch (e: any) { toast.value = { ok: false, msg: e.message } }
   saving.value = false
 }
@@ -116,6 +128,14 @@ async function save() {
           <div class="btns">
             <button class="bc" @click="ed = null">Cancel</button>
             <button class="bs" @click="save" :disabled="saving">{{ saving ? 'Saving...' : 'Update' }}</button>
+          </div>
+          <div class="delete-zone">
+            <button v-if="!confirmDelete" class="del-btn" @click="confirmDelete = true">🗑 Delete Match</button>
+            <div v-else class="del-confirm">
+              <span>Are you sure?</span>
+              <button class="del-yes" @click="removeMatch" :disabled="saving">Yes, delete</button>
+              <button class="del-no" @click="confirmDelete = false">No</button>
+            </div>
           </div>
         </div>
       </div>
@@ -210,6 +230,25 @@ async function save() {
 .bc { flex: 1; padding: 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--card); color: var(--text); font-weight: 600; font-size: 13px; }
 .bs { flex: 2; padding: 10px; border-radius: 8px; border: none; background: var(--accent); color: #fff; font-weight: 700; font-size: 13px; }
 .bs:disabled { opacity: 0.35; cursor: not-allowed; }
+
+.delete-zone { border-top: 1px solid var(--border); padding-top: 12px; margin-top: 4px; }
+.del-btn {
+  width: 100%; padding: 8px; border-radius: 8px; border: 1px solid var(--border);
+  background: var(--card); color: var(--text); font-size: 12px; font-weight: 600;
+  transition: all 0.15s;
+}
+.del-btn:hover { background: var(--red-bg); color: var(--red); border-color: rgba(239,68,68,0.2); }
+.del-confirm { display: flex; align-items: center; gap: 8px; }
+.del-confirm span { font-size: 12px; color: var(--red); font-weight: 600; flex: 1; }
+.del-yes {
+  padding: 6px 14px; border-radius: 8px; border: none;
+  background: var(--red); color: #fff; font-size: 12px; font-weight: 700;
+}
+.del-yes:disabled { opacity: 0.4; }
+.del-no {
+  padding: 6px 14px; border-radius: 8px; border: 1px solid var(--border);
+  background: var(--card); color: var(--text); font-size: 12px; font-weight: 600;
+}
 
 @media (max-width: 600px) {
   .wbtns { flex-direction: column; }

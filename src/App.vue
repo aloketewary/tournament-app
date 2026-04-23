@@ -6,11 +6,12 @@ import PlayersTab from './components/PlayersTab.vue'
 import CreateMatchTab from './components/CreateMatchTab.vue'
 import FixturesTab from './components/FixturesTab.vue'
 import ResultsTab from './components/ResultsTab.vue'
+import RulesTab from './components/RulesTab.vue'
 import UserPrompt from './components/UserPrompt.vue'
 import { getUser, hasUser, exportGameCSV } from './services/sheetService'
 
 const sheetNames = ['TT_Doubles', 'TT_Singles', 'Carrom_Doubles', 'Carrom_Singles', 'Chess', 'Foosball_Doubles', 'Foosball_Singles', 'Dart']
-const validViews = ['fixtures', 'results', 'create', 'players'] as const
+const validViews = ['fixtures', 'results', 'create', 'players', 'rules'] as const
 type View = typeof validViews[number]
 
 const router = useRouter()
@@ -80,16 +81,23 @@ const currentUser = ref(getUser())
 const year = ref(2026)
 
 function selectView(id: View) {
-  if ((id === 'create') && !hasUser()) {
+  if ((id === 'create' || id === 'rules') && !hasUser()) {
     showUserPrompt.value = true
+    pendingView.value = id
     return
   }
   activeView.value = id
 }
 
+const pendingView = ref<View | null>(null)
+
 function onUserConfirmed() {
   showUserPrompt.value = false
   currentUser.value = getUser()
+  if (pendingView.value) {
+    activeView.value = pendingView.value
+    pendingView.value = null
+  }
 }
 
 function exportCurrent() {
@@ -106,6 +114,7 @@ const views = [
   { id: 'results' as const, label: 'Results', icon: '🏆' },
   { id: 'create' as const, label: 'Create Match', icon: '⚡' },
   { id: 'players' as const, label: 'Players', icon: '👥' },
+  { id: 'rules' as const, label: 'Rules', icon: '📜' },
 ]
 
 const teamCount = computed(() => games.value[activeGame.value]?.teams.length || 0)
@@ -188,6 +197,7 @@ onMounted(loadData)
         <CreateMatchTab v-if="activeView === 'create'" :data="games[activeGame]" :game="activeGame" :key="activeGame" @refresh="loadData" />
         <FixturesTab v-if="activeView === 'fixtures'" :data="games[activeGame]" :game="activeGame" :key="activeGame" @refresh="loadData" />
         <ResultsTab v-if="activeView === 'results'" :data="games[activeGame]" :game="activeGame" :key="activeGame" @refresh="loadData" />
+        <RulesTab v-if="activeView === 'rules'" :game="activeGame" :key="activeGame" @needUser="showUserPrompt = true" />
       </template>
     </main>
     <router-view v-show="false" />
