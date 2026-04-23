@@ -32,22 +32,17 @@ function doPost(e) {
     }
 
     if (data.action === 'updateMatch') {
-      var matchSheetName = data.sheetName + '_Matches';
-      var sheet = ss.getSheetByName(matchSheetName);
-      if (!sheet) {
-        return ContentService.createTextOutput(JSON.stringify({ success: false, error: 'Match sheet not found' }))
-          .setMimeType(ContentService.MimeType.JSON);
-      }
+      var matchSheet = getOrCreateMatchSheet(ss, data.sheetName);
 
-      var values = sheet.getDataRange().getValues();
+      var values = matchSheet.getDataRange().getValues();
       var now = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'dd-MMM-yyyy HH:mm');
       for (var i = 1; i < values.length; i++) {
         if (String(values[i][0]) === data.matchId) {
-          if (data.scheduledDate !== undefined) sheet.getRange(i + 1, 4).setValue(data.scheduledDate);
-          if (data.winner !== undefined) sheet.getRange(i + 1, 5).setValue(data.winner);
-          if (data.remarks !== undefined) sheet.getRange(i + 1, 6).setValue(data.remarks);
-          sheet.getRange(i + 1, 7).setValue(data.updatedBy || '');
-          sheet.getRange(i + 1, 8).setValue(now);
+          if (data.scheduledDate !== undefined) matchSheet.getRange(i + 1, 4).setValue(data.scheduledDate);
+          if (data.winner !== undefined) matchSheet.getRange(i + 1, 5).setValue(data.winner);
+          if (data.remarks !== undefined) matchSheet.getRange(i + 1, 6).setValue(data.remarks);
+          matchSheet.getRange(i + 1, 7).setValue(data.updatedBy || '');
+          matchSheet.getRange(i + 1, 8).setValue(now);
           return ContentService.createTextOutput(JSON.stringify({ success: true }))
             .setMimeType(ContentService.MimeType.JSON);
         }
@@ -58,17 +53,12 @@ function doPost(e) {
     }
 
     if (data.action === 'deleteMatch') {
-      var matchSheetName = data.sheetName + '_Matches';
-      var sheet = ss.getSheetByName(matchSheetName);
-      if (!sheet) {
-        return ContentService.createTextOutput(JSON.stringify({ success: false, error: 'Match sheet not found' }))
-          .setMimeType(ContentService.MimeType.JSON);
-      }
+      var matchSheet = getOrCreateMatchSheet(ss, data.sheetName);
 
-      var values = sheet.getDataRange().getValues();
+      var values = matchSheet.getDataRange().getValues();
       for (var i = 1; i < values.length; i++) {
         if (String(values[i][0]) === data.matchId) {
-          sheet.deleteRow(i + 1);
+          matchSheet.deleteRow(i + 1);
           return ContentService.createTextOutput(JSON.stringify({ success: true }))
             .setMimeType(ContentService.MimeType.JSON);
         }
@@ -102,6 +92,14 @@ function getOrCreateMatchSheet(ss, sheetName) {
     sheet.setColumnWidth(6, 200);
     sheet.setColumnWidth(7, 120);
     sheet.setColumnWidth(8, 150);
+  } else {
+    // Migrate old sheets: add missing columns if needed
+    var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+    if (headers.length < 8 || headers[6] !== 'Updated By') {
+      sheet.getRange(1, 7).setValue('Updated By');
+      sheet.getRange(1, 8).setValue('Updated At');
+      sheet.getRange(1, 7, 1, 2).setFontWeight('bold');
+    }
   }
 
   return sheet;

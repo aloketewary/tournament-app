@@ -131,7 +131,7 @@ onMounted(loadData)
           <button v-if="currentUser" class="user-chip" @click="changeUser" title="Change user">
             👤 {{ currentUser }}
           </button>
-          <button class="user-chip" @click="exportCurrent" title="Export CSV" :disabled="loading || !games[activeGame]">
+          <button class="user-chip" @click="exportCurrent" :disabled="loading || !games[activeGame]">
             📥 Download Excel
           </button>
           <button class="hdr-btn" @click="loadData" :disabled="loading" title="Refresh data">
@@ -232,6 +232,13 @@ onMounted(loadData)
   transition: all 0.15s;
 }
 .user-chip:hover { border-color: var(--accent-border); box-shadow: var(--shadow); }
+.export-btn {
+  padding: 6px 12px; border-radius: 100px; border: 1px solid var(--border);
+  background: var(--card); color: var(--text); font-size: 12px; font-weight: 600;
+  transition: all 0.15s;
+}
+.export-btn:hover { color: var(--accent); border-color: var(--accent-border); background: var(--accent-bg); }
+.export-btn:disabled { opacity: 0.3; pointer-events: none; }
 
 /* Games */
 .games {
